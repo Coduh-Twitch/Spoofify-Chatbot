@@ -4,7 +4,7 @@ import { join } from "path";
 import cors from "cors"
 import { AppTokenAuthProvider, RefreshingAuthProvider } from "@twurple/auth";
 import { createSession, getSessionByToken, getSessionByUserId, updateSession } from "./lib/db/sessions";
-import { post } from "axios";
+import { AxiosResponse, post } from "axios";
 import { SessionData, TokenResponse } from "./lib/types";
 import { get } from "axios";
 import { ApiClient } from "@twurple/api";
@@ -21,6 +21,10 @@ import { rewardIsSongRequest } from "./lib/db/rewards";
 import toggleSongRequestCommand from "./commands/toggleSongRequest";
 import addRewardCommand from "./commands/addReward";
 import removeRewardCommand from "./commands/removeReward";
+import spoofifyCommand from "./commands/spoofifyCommands";
+
+let withRandomizer: boolean = true;
+export let emoji: string = "🎵";
 
 // Enable Environment Variables (and shut dotenv the fuck up)
 
@@ -59,7 +63,7 @@ let scopes = ["user:write:chat", "user:read:chat", "chat:read", "chat:edit", "us
 
 const authProvider = new RefreshingAuthProvider({ clientId: process.env.CLIENT_ID, clientSecret: process.env.CLIENT_SECRET, appImpliedScopes: scopes })
 const apiClient = new ApiClient({ authProvider })
-let chat: ChatClient | null = new ChatClient({ authProvider, channels: channelsToArray(), isAlwaysMod: false });
+export let chat: ChatClient | null = new ChatClient({ authProvider, channels: channelsToArray(), isAlwaysMod: false });
 const eventsub = new EventSubWsListener({ apiClient });
 
 export async function say(channel, content, replyId: string | null = null, withRandomizer: boolean = true): Promise<string | null> {
@@ -136,31 +140,34 @@ async function initChat(c: ChatClient): Promise<void> {
     })
 
     c.onMessage(async (channel, user, text, msg) => {
+        if (user.toLowerCase() === process.env.BOT_USER_NAME?.toLowerCase()) {
+            withRandomizer = !(msg.userInfo.isVip || msg.userInfo.isMod || msg.userInfo.isLeadMod || msg.userInfo.isBroadcaster)
+        }
         console.log("question", rewardsInQuestion)
         if (msg.rewardId && channel !== process.env.BOT_USER_NAME && !rewardsInQuestion) {
             console.log('reward', msg.rewardId)
             if (rewardIsSongRequest(msg.rewardId)) {
-                    let query = text;
+                let query = text;
 
-                    let searchingMsgId = await reply(channel, `Searching for ${query}...`, msg.id)
+                let searchingMsgId = await reply(channel, `Searching for ${query}...`, msg.id)
 
-                    search(query).then(async searchResults => {
-                        let result = searchResults[0];
-                        let addingMsgId = await reply(channel, `Adding "${result.name} - ${formatArtists(result.artists)}" to the queue...`, searchingMsgId);
+                search(query).then(async searchResults => {
+                    let result = searchResults[0];
+                    let addingMsgId = await reply(channel, `Adding "${result.name} - ${formatArtists(result.artists)}" to the queue...`, searchingMsgId);
 
-                        let added = await addToQueue(result.uri);
+                    let added = await addToQueue(result.uri);
 
-                        setTimeout(async () => {
-                            if (added) {
-                                await reply(channel, `Added "${result.name} - ${formatArtists(result.artists)}" to the queue!`, addingMsgId)
-                            } else {
-                                await reply(channel, `Failed to add "${result.name} - ${formatArtists(result.artists)}" to the queue`, addingMsgId)
-                            }
-                        }, 1e3)
-                    }).catch(async e => {
-                        await reply(channel, `Found 0 results for "${query}"`, msg.id)
-                    });
-                }
+                    setTimeout(async () => {
+                        if (added) {
+                            await reply(channel, `Added "${result.name} - ${formatArtists(result.artists)}" to the queue!`, addingMsgId)
+                        } else {
+                            await reply(channel, `Failed to add "${result.name} - ${formatArtists(result.artists)}" to the queue`, addingMsgId)
+                        }
+                    }, 1e3)
+                }).catch(async e => {
+                    await reply(channel, `Found 0 results for "${query}"`, msg.id)
+                });
+            }
             return;
         }
 
@@ -174,7 +181,7 @@ async function initChat(c: ChatClient): Promise<void> {
 
                     await reply(channel, `🎸 The bot has been added to your channel!`, msg.id)
                     await say(user, `🎸  ShortBotduh is here! 💎 The bot may get caught by spam filters. Add VIP or Mod to the bot to bypass this. ❗ @${user} or a moderator must run !setup to begin using song request features.`, null, false)
-                    apiClient.whispers.sendWhisper(process.env.BOT_USER_ID, msg.userInfo.userId, `Thank you for using Spoofify! Please log in at ${process.env.SPOOFIFY_WEB_URL}/auth to start using the bot! You can run !leave in the same channel to deactivate the bot. Happy listening!`).then(() => {}).catch(e => {
+                    apiClient.whispers.sendWhisper(process.env.BOT_USER_ID, msg.userInfo.userId, `Thank you for using Spoofify! Please log in at ${process.env.SPOOFIFY_WEB_URL}/auth to start using the bot! You can run !leave in the same channel to deactivate the bot. Happy listening!`).then(() => { }).catch(e => {
                         console.log(e)
                     })
                 }
@@ -203,9 +210,10 @@ async function initChat(c: ChatClient): Promise<void> {
                 if (["setup"].includes(command)) await setupCommand(userHasAuthority(msg.userInfo), channel, user, text, msg, args, c);
 
                 if (["songrequest", "sr", "request", "addsong", "play"].includes(command)) await songRequestCommand(userHasAuthority(msg.userInfo), channel, user, text, msg, args);
-                if(["togglesr", "togglecommand"].includes(command)) await toggleSongRequestCommand(userHasAuthority(msg.userInfo), channel, user, text, msg, args)
-                if(["addreward"].includes(command)) await addRewardCommand(userHasAuthority(msg.userInfo), channel, user, text, msg, args, c)
-                if(["delreward", "removereward", "remreward"].includes(command)) await removeRewardCommand(userHasAuthority(msg.userInfo), channel, user, text, msg, args, c)
+                if (["togglesr", "togglecommand"].includes(command)) await toggleSongRequestCommand(userHasAuthority(msg.userInfo), channel, user, text, msg, args)
+                if (["addreward"].includes(command)) await addRewardCommand(userHasAuthority(msg.userInfo), channel, user, text, msg, args, c)
+                if (["delreward", "removereward", "remreward"].includes(command)) await removeRewardCommand(userHasAuthority(msg.userInfo), channel, user, text, msg, args, c)
+                    if (["spoofify"].includes(command)) await spoofifyCommand(userHasAuthority(msg.userInfo), channel, user, text, msg, args)
 
             }
         }
@@ -287,7 +295,7 @@ setInterval(async () => {
         if (botSession) {
             try {
 
-                let clientAuthDetail: Axios.AxiosXHR<{ data: any[] }> = await get(`https://api.twitch.tv/helix/users`, { headers: { "Authorization": `Bearer ${botSession.accessToken}`, "Client-Id": process.env.CLIENT_ID } })
+                let clientAuthDetail: AxiosResponse<{ data: any[] }> = await get(`https://api.twitch.tv/helix/users`, { headers: { "Authorization": `Bearer ${botSession.accessToken}`, "Client-Id": process.env.CLIENT_ID } })
                 if (clientAuthDetail.data?.data?.[0]) {
                     let ud = clientAuthDetail.data?.data?.[0];
                     if (!authProvider.hasUser(ud.id)) {
