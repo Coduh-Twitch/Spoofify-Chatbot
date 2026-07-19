@@ -9,7 +9,7 @@ import {
   getSessionByUserId,
   updateSession,
 } from "./lib/db/sessions";
-import { AxiosResponse, post } from "axios";
+import { post } from "axios";
 import { SessionData, TokenResponse } from "./lib/types";
 import { get } from "axios";
 import { ApiClient } from "@twurple/api";
@@ -34,6 +34,7 @@ import toggleSongRequestCommand from "./commands/toggleSongRequest";
 import addRewardCommand from "./commands/addReward";
 import removeRewardCommand from "./commands/removeReward";
 import spoofifyCommand from "./commands/spoofifyCommands";
+import skipSongCommand from "./commands/skipSong";
 
 let withRandomizer: boolean = false;
 export let emoji: string = "🎵";
@@ -404,6 +405,16 @@ async function initChat(c: ChatClient): Promise<void> {
             msg,
             args,
           );
+        if (
+          ["skipsong", "skiptrack", "nextsong", "nexttrack"].includes(command)
+        )
+          await skipSongCommand(
+            userHasAuthority(msg.userInfo),
+            channel,
+            user,
+            text,
+            msg,
+          );
       }
     }
   });
@@ -480,7 +491,7 @@ setInterval(async () => {
     let botSession = getSessionByUserId(process.env.BOT_USER_ID);
     if (botSession) {
       try {
-        let clientAuthDetail: AxiosResponse<{ data: any[] }> = await get(
+        let clientAuthDetail: any = await get(
           `https://api.twitch.tv/helix/users`,
           {
             headers: {
